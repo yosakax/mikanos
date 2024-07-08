@@ -186,6 +186,10 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle,
         gop->Mode->Info->VerticalResolution,
         GetPixelFormatUnicode(gop->Mode->Info->PixelFormat),
         gop->Mode->Info->PixelsPerScanLine);
+  Print(L"Frame Buffer: 0x%0lx - 0x%0lx, Size: %lu bytes\n",
+        gop->Mode->FrameBufferBase,
+        gop->Mode->FrameBufferBase + gop->Mode->FrameBufferSize,
+        gop->Mode->FrameBufferSize);
 
   UINT8 *frame_buffer = (UINT8 *)gop->Mode->FrameBufferBase;
 
@@ -236,9 +240,9 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle,
 
   // call kernel
   UINT64 entry_addr = *(UINT64 *)(kernel_base_addr + 24);
-  typedef void EntryPointType(void);
+  typedef void EntryPointType(UINT64, UINT64);
   EntryPointType *entry_point = (EntryPointType *)entry_addr;
-  entry_point();
+  entry_point(gop->Mode->FrameBufferBase, gop->Mode->FrameBufferSize);
   // call kernel
 
   Print(L"All done");

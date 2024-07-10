@@ -1,3 +1,4 @@
+#include "frame_buffer_config.hpp"
 #include <Guid/FileInfo.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PrintLib.h>
@@ -303,9 +304,32 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle,
 
   // call kernel
   UINT64 entry_addr = *(UINT64 *)(kernel_base_addr + 24);
-  typedef void EntryPointType(UINT64, UINT64);
+
+  // pass_frame_buffer_config
+  struct FrameBufferConfig config = {
+      (UINT8 *)gop->Mode->FrameBufferBase,
+      gop->Mode->Info->PixelsPerScanLine,
+      gop->Mode->Info->HorizontalResolution,
+      gop->Mode->Info->VerticalResolution,
+      0,
+  };
+
+  switch (gop->Mode->Info->PixelFormat) {
+  case PixelRedGreenBlueReserved8BitPerColor:
+    config.pixel_format = kPixelRGBResv8BitPerColor;
+    break;
+  case PixelBlueGreenRedReserved8BitPerColor:
+    config.pixel_format = kPixelBGRResv8BitPerColor;
+    break;
+  default:
+    Print(L"Unimplemented pixel format: %d\n", gop->Mode->Info->PixelFormat);
+    Halt();
+  }
+  // pass_frame_buffer_config
+
+  typedef void EntryPointType(const struct FrameBufferConfig *);
   EntryPointType *entry_point = (EntryPointType *)entry_addr;
-  entry_point(gop->Mode->FrameBufferBase, gop->Mode->FrameBufferSize);
+  entry_point(&config);
   // call kernel
 
   Print(L"All done");

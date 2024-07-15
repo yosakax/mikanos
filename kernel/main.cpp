@@ -8,16 +8,19 @@
 #include "logger.hpp"
 #include "mouse.hpp"
 #include "pci.hpp"
+#include "queue.hpp"
 #include "usb/classdriver/mouse.hpp"
 #include "usb/device.hpp"
 #include "usb/memory.hpp"
 #include "usb/xhci/trb.hpp"
 #include "usb/xhci/xhci.hpp"
+#include <array>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <numeric>
+#include <sys/cdefs.h>
 #include <vector>
 
 // void operator delete(void *obj) noexcept {}
@@ -80,16 +83,21 @@ void SwitchEhci2Xhci(const pci::Device &xhc_dev) {
 }
 // switch_echi2xhci
 
+// queue_message
+struct Message {
+  enum Type {
+    kInterruptXHCI,
+  } type;
+};
+
+ArrayQueue<Message> *main_queue;
+// queue_message
+
 // xhci_handler
 usb::xhci::Controller *xhc;
 
 __attribute__((interrupt)) void IntHandlerXHCI(InterruptFrame *frame) {
-  while (xhc->PrimaryEventRing()->HasFront()) {
-    if (auto err = ProcessEvent(*xhc)) {
-      Log(kError, "Error while ProcessEvent: %s at %s:%d\n", err.Name(),
-          err.File(), err.Line());
-    }
-  }
+  main_queue->Push(Message{Message::kInterruptXHCI});
   NotifyEndOfInterrupt();
 }
 
@@ -123,6 +131,10 @@ extern "C" void KernelMain(const FrameBufferConfig &frame_buffer_config) {
   FillRectangle(*pixel_writer, {10, kFrameHeight - 40}, {30, 30},
                 {160, 160, 160});
   // draw_desktop
+
+  std::array<Message, 32> main_queue_data;
+  ArrayQueue<Message> main_queue{main_queue_data};
+  ::main_queue = &main_queue;
 
   console = new (console_buf)
       Console{*pixel_writer, kDesktopFGColor, kDesktopBGColor};
@@ -229,8 +241,33 @@ extern "C" void KernelMain(const FrameBufferConfig &frame_buffer_config) {
   }
   // configure port
 
-  while (1) {
-    __asm__("hlt");
+  while (true) {
+    __asm__("cli");
+
+    if (main_queue.Count() == 0) {
+      __asm__("sti\n\thlt");
+      continue;
+    }
+
+    Message msg = main_queue.Front();
+    main_queue.Pop();
+    __asm__("sti");
+
+    // get_front_message
+    switch (msg.type) {
+    case Message::kInterruptXHCI:
+      while (xhc.PrimaryEventRing()->HasFront()) {
+        if (auto err = ProcessEvent(xhc)) {
+          Log(kError, "Error while ProcessEvent: %s at %s:%d\n", err.Name(),
+              err.File(), err.Line());
+        }
+      }
+      break;
+    default:
+      Log(kError, "Unknown message type: %d\n", msg.type);
+      // break;
+    }
+    // get_front_message
   }
 }
 

@@ -1,8 +1,10 @@
+#include "asmfunc.h"
 #include "console.hpp"
 #include "error.hpp"
 #include "font.hpp"
 #include "frame_buffer_config.hpp"
 #include "graphics.hpp"
+#include "interrupt.hpp"
 #include "logger.hpp"
 #include "mouse.hpp"
 #include "pci.hpp"
@@ -78,6 +80,21 @@ void SwitchEhci2Xhci(const pci::Device &xhc_dev) {
 }
 // switch_echi2xhci
 
+// xhci_handler
+usb::xhci::Controller *xhc;
+
+__attribute__((interrupt)) void IntHandlerXHCI(InterruptFrame *frame) {
+  while (xhc->PrimaryEventRing()->HasFront()) {
+    if (auto err = ProcessEvent(*xhc)) {
+      Log(kError, "Error while ProcessEvent: %s at %s:%d\n", err.Name(),
+          err.File(), err.Line());
+    }
+  }
+  NotifyEndOfInterrupt();
+}
+
+// xhci_handler
+
 extern "C" void KernelMain(const FrameBufferConfig &frame_buffer_config) {
   // reinterpret_cast<T>はただの(T)val と同じ型のキャストだが，
   // 整数からポインタへの型変換であることを明示することができてよい
@@ -149,9 +166,25 @@ extern "C" void KernelMain(const FrameBufferConfig &frame_buffer_config) {
     Log(kInfo, "xHC has been found: %d.%d.%d\n", xhc_dev->bus, xhc_dev->device,
         xhc_dev->function);
   } else {
-    Log(kInfo, "xhc is nullptr\n");
+    Log(kError, "xhc is nullptr\n");
   }
   // find_xhc
+
+  // load_idt
+  const uint16_t cs = GetCS();
+  SetIDTEntry(idt[InterruptVector::kXHCI],
+              MakeIDTAttr(DescriptorType::kInterruptGate, 0),
+              reinterpret_cast<uint64_t>(IntHandlerXHCI), cs);
+  LoadIDT(sizeof(idt) - 1, reinterpret_cast<uintptr_t>(&idt[0]));
+  // load_idt
+
+  // configure_msi
+  const uint8_t bsp_local_apic_id =
+      *reinterpret_cast<const uint32_t *>(0xfee00020) >> 24;
+  pci::ConfigureMSIFixedDestination(
+      *xhc_dev, bsp_local_apic_id, pci::MSITriggerMode::kLevel,
+      pci::MSIDeliveryMode::kFixed, InterruptVector::kXHCI, 0);
+  // configure_msi
 
   // read_bar
   const WithError<uint64_t> xhc_bar = pci::ReadBar(*xhc_dev, 0);
@@ -176,6 +209,9 @@ extern "C" void KernelMain(const FrameBufferConfig &frame_buffer_config) {
   xhc.Run();
   // init_xhc
 
+  ::xhc = &xhc;
+  __asm__("sti");
+
   // configure port
   usb::HIDMouseDriver::default_observer = MouseObserver;
 
@@ -192,15 +228,6 @@ extern "C" void KernelMain(const FrameBufferConfig &frame_buffer_config) {
     }
   }
   // configure port
-
-  // receive_event
-  while (1) {
-    if (auto err = usb::xhci::ProcessEvent(xhc)) {
-      Log(kError, "Error while ProcessEvent: %s at %s:%d\n", err.Name(),
-          err.File(), err.Line());
-    }
-  }
-  // receive_event
 
   while (1) {
     __asm__("hlt");

@@ -1,3 +1,10 @@
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+
+#include <numeric>
+#include <vector>
+
 #include "asmfunc.h"
 #include "console.hpp"
 #include "error.hpp"
@@ -8,21 +15,15 @@
 #include "logger.hpp"
 #include "memory_map.hpp"
 #include "mouse.hpp"
+#include "paging.hpp"
 #include "pci.hpp"
 #include "queue.hpp"
+#include "segment.hpp"
 #include "usb/classdriver/mouse.hpp"
 #include "usb/device.hpp"
 #include "usb/memory.hpp"
 #include "usb/xhci/trb.hpp"
 #include "usb/xhci/xhci.hpp"
-#include <array>
-#include <cstdarg>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <numeric>
-#include <sys/cdefs.h>
-#include <vector>
 
 // void operator delete(void *obj) noexcept {}
 
@@ -101,11 +102,19 @@ __attribute__((interrupt)) void IntHandlerXHCI(InterruptFrame *frame) {
   main_queue->Push(Message{Message::kInterruptXHCI});
   NotifyEndOfInterrupt();
 }
-
 // xhci_handler
 
-extern "C" void KernelMain(const FrameBufferConfig &frame_buffer_config,
-                           const MemoryMap &memory_map) {
+// main_new_stack
+
+alignas(16) uint8_t kernel_main_stack[1024 * 1024];
+
+extern "C" void
+KernelMainNewStack(const FrameBufferConfig &frame_buffer_config_ref,
+                   const MemoryMap &memory_map_ref) {
+  FrameBufferConfig frame_buffer_config{frame_buffer_config_ref};
+  MemoryMap memory_map{memory_map_ref};
+  // main_new_stack
+
   // reinterpret_cast<T>はただの(T)val と同じ型のキャストだが，
   // 整数からポインタへの型変換であることを明示することができてよい
   switch (frame_buffer_config.pixel_format) {
@@ -134,44 +143,48 @@ extern "C" void KernelMain(const FrameBufferConfig &frame_buffer_config,
                 {160, 160, 160});
   // draw_desktop
 
-  std::array<Message, 32> main_queue_data;
-  ArrayQueue<Message> main_queue{main_queue_data};
-  ::main_queue = &main_queue;
-
   console = new (console_buf)
       Console{*pixel_writer, kDesktopFGColor, kDesktopBGColor};
 
   printk("Welcome to MikanOS!\n");
   SetLogLevel(kWarn);
 
-  const std::array available_memory_types{
-      MemoryType::kEfiBootServicesCode,
-      MemoryType::kEfiBootServicesData,
-      MemoryType::kEfiConventionalMemory,
-  };
+  // setup_segments_and_page
+  SetupSegments();
+
+  const uint16_t kernel_cs = 1 << 3;
+  const uint16_t kernel_ss = 2 << 3;
+  SetDSAll(0);
+  SetCSSS(kernel_cs, kernel_ss);
+
+  SetupIdentityPageTable();
+  // setup_segments_and_page
 
   // print_memory_map
-  printk("memory_map: %p\n", memory_map);
-  for (uintptr_t iter = reinterpret_cast<uintptr_t>(memory_map.buffer);
-       iter <
-       reinterpret_cast<uintptr_t>(memory_map.buffer) + memory_map.map_size;
+  const auto memory_map_base = reinterpret_cast<uintptr_t>(memory_map.buffer);
+
+  for (uintptr_t iter = memory_map_base;
+       iter < memory_map_base + memory_map.map_size;
        iter += memory_map.descriptor_size) {
-    auto desc = reinterpret_cast<MemoryMapDescriptor *>(iter);
-    for (int i = 0; i < available_memory_types.size(); ++i) {
-      if (desc->type == available_memory_types[i]) {
-        printk("type = %u, phys = %08lx - %08lx, pages = %lu, attr = %08lx\n",
-               desc->type, desc->physical_start,
-               desc->physical_start + desc->number_of_pages * 4096 - 1,
-               desc->number_of_pages, desc->attribute);
-      }
+    auto desc = reinterpret_cast<MemoryDescriptor *>(iter);
+    if (IsAvailable(static_cast<MemoryType>(desc->type))) {
+      printk("type = %u, phys = %08lx - %08lx, pages = %lu, attr = %08lx\n",
+             desc->type, desc->physical_start,
+             desc->physical_start + desc->number_of_pages * 4096 - 1,
+             desc->number_of_pages, desc->attribute);
     }
   }
+
   // print_memory_map
 
   // mouse_cursor
   mouse_cursor = new (mouse_cursor_buf)
       MouseCursor{pixel_writer, kDesktopBGColor, {300, 200}};
   // mouse_cursor
+
+  std::array<Message, 32> main_queue_data;
+  ArrayQueue<Message> main_queue{main_queue_data};
+  ::main_queue = &main_queue;
 
   // show_devices
   auto err = pci::ScanAllBus();
@@ -209,10 +222,9 @@ extern "C" void KernelMain(const FrameBufferConfig &frame_buffer_config,
   // find_xhc
 
   // load_idt
-  const uint16_t cs = GetCS();
   SetIDTEntry(idt[InterruptVector::kXHCI],
               MakeIDTAttr(DescriptorType::kInterruptGate, 0),
-              reinterpret_cast<uint64_t>(IntHandlerXHCI), cs);
+              reinterpret_cast<uint64_t>(IntHandlerXHCI), kernel_cs);
   LoadIDT(sizeof(idt) - 1, reinterpret_cast<uintptr_t>(&idt[0]));
   // load_idt
 
@@ -253,7 +265,7 @@ extern "C" void KernelMain(const FrameBufferConfig &frame_buffer_config,
   // configure port
   usb::HIDMouseDriver::default_observer = MouseObserver;
 
-  for (int i = 1; i < xhc.MaxPorts(); ++i) {
+  for (int i = 1; i <= xhc.MaxPorts(); ++i) {
     auto port = xhc.PortAt(i);
     Log(kDebug, "Port %d: IsConnected = %d\n", i, port.IsConnected());
 

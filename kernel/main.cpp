@@ -13,6 +13,7 @@
 #include "graphics.hpp"
 #include "interrupt.hpp"
 #include "logger.hpp"
+#include "memory_manager.hpp"
 #include "memory_map.hpp"
 #include "mouse.hpp"
 #include "paging.hpp"
@@ -52,6 +53,11 @@ int printk(const char *format, ...) {
   return result;
 }
 // printk
+
+// memman_buf
+char memory_manager_buf[sizeof(BitMapMemoryManager)];
+BitMapMemoryManager *memory_manager;
+// memman_buf
 
 // mouse_observer
 char mouse_cursor_buf[sizeof(MouseCursor)];
@@ -160,20 +166,40 @@ KernelMainNewStack(const FrameBufferConfig &frame_buffer_config_ref,
   SetupIdentityPageTable();
   // setup_segments_and_page
 
+  // mark_allocated
+  ::memory_manager = new (memory_manager_buf) BitMapMemoryManager;
+
   // print_memory_map
   const auto memory_map_base = reinterpret_cast<uintptr_t>(memory_map.buffer);
+  uintptr_t available_end = 0;
 
   for (uintptr_t iter = memory_map_base;
        iter < memory_map_base + memory_map.map_size;
        iter += memory_map.descriptor_size) {
     auto desc = reinterpret_cast<MemoryDescriptor *>(iter);
+    if (available_end < desc->physical_start) {
+      memory_manager->MarkAllocated(FrameID{available_end / kBytesPerFrame},
+                                    (desc->physical_start - available_end) /
+                                        kBytesPerFrame);
+    }
+
+    const auto physical_end =
+        desc->physical_start + desc->number_of_pages * kUEFIPageSize;
     if (IsAvailable(static_cast<MemoryType>(desc->type))) {
+      available_end = physical_end;
       printk("type = %u, phys = %08lx - %08lx, pages = %lu, attr = %08lx\n",
              desc->type, desc->physical_start,
              desc->physical_start + desc->number_of_pages * 4096 - 1,
              desc->number_of_pages, desc->attribute);
+    } else {
+      memory_manager->MarkAllocated(
+          FrameID{desc->physical_start / kBytesPerFrame},
+          desc->number_of_pages * kUEFIPageSize / kBytesPerFrame);
     }
   }
+  memory_manager->SetMemoryRange(FrameID{1},
+                                 FrameID{available_end / kBytesPerFrame});
+  // mark_allocated
 
   // print_memory_map
 

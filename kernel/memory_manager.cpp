@@ -21,7 +21,7 @@ WithError<FrameID> BitMapMemoryManager::Allocate(size_t num_frames) {
       }
     }
     if (i == num_frames) {
-      MakeAllocated(FrameID{start_frame_id}, num_frames);
+      MarkAllocated(FrameID{start_frame_id}, num_frames);
       return {FrameID{start_frame_id}, MAKE_ERROR(Error::kSuccess)};
     }
     // 次のフレームから再検索
@@ -76,3 +76,22 @@ void BitMapMemoryManager::SetBit(FrameID frame, bool allocated) {
   }
 }
 // get_set_bit
+
+// set_program_break
+
+extern "C" caddr_t program_break, program_break_end;
+
+Error InitializeHeap(BitMapMemoryManager &memory_manager) {
+  const int kHeapFrames = 64 * 512; // 暫定的な値。足りなくなったら増やそう
+  const auto heap_start = memory_manager.Allocate(kHeapFrames);
+  if (heap_start.error) {
+    return heap_start.error;
+  }
+
+  program_break =
+      reinterpret_cast<caddr_t>(heap_start.value.ID() * kBytesPerFrame);
+  program_break_end = program_break + kHeapFrames * kBytesPerFrame;
+  return MAKE_ERROR(Error::kSuccess);
+}
+
+// set_program_break

@@ -87,3 +87,5 @@ private:
   void SetBit(FrameID frame, bool allocated);
 };
 // bitmap_memory_manager
+
+Error InitializeHeap(BitMapMemoryManager &memory_manager);

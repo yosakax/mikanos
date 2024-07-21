@@ -3,3 +3,8 @@
 *.elf
 *.bin
 tmp/
+/kernel.elf
+/hankaku.bin
+
+/html
+/ipxe_root

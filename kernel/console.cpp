@@ -17,7 +17,8 @@ void Console::PutString(const char *s) {
     if (*s == '\n') {
       Newline();
     } else if (cursor_column_ < kColumns - 1) {
-      WriteAscii(*writer_, cursor_column_ * 8, 16 * cursor_row_, *s, fg_color_);
+      WriteAscii(*writer_, Vector2D<int>{cursor_column_ * 8, 16 * cursor_row_},
+                 *s, fg_color_);
       buffer_[cursor_row_][cursor_column_] = *s;
       cursor_column_++;
     }
@@ -46,14 +47,15 @@ void Console::Newline() {
     // 背景色に塗りつぶし
     for (int y = 0; y < 16 * kRows; ++y) {
       for (int x = 0; x < 8 * kColumns; ++x) {
-        writer_->Write(x, y, bg_color_);
+        writer_->Write(Vector2D<int>{x, y}, bg_color_);
       }
     }
     // 改行した文字列を書き込む
     for (int row = 0; row < kRows - 1; ++row) {
       // memcpy(dst, src, size):  srcの戦闘からsizeバイトをdestにこぴーする　
       memcpy(buffer_[row], buffer_[row + 1], kColumns + 1);
-      WriteString(*writer_, 0, 16 * row, buffer_[row], fg_color_);
+      WriteString(*writer_, Vector2D<int>{0, 16 * row}, buffer_[row],
+                  fg_color_);
     }
     // memset(s, c, n): sをnバイト分cで埋める
     memset(buffer_[kRows - 1], 0, kColumns + 1);
@@ -64,7 +66,7 @@ void Console::Newline() {
 // console_refresh
 void Console::Refresh() {
   for (int row = 0; row < kRows; ++row) {
-    WriteString(*writer_, 0, 16 * row, buffer_[row], fg_color_);
+    WriteString(*writer_, Vector2D<int>{0, 16 * row}, buffer_[row], fg_color_);
   }
 }
 // console_refresh

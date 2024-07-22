@@ -1,4 +1,5 @@
 #include "font.hpp"
+#include "graphics.hpp"
 
 extern const uint8_t _binary_hankaku_bin_start;
 extern const uint8_t _binary_hankaku_bin_end;
@@ -13,7 +14,7 @@ const uint8_t *GetFont(char c) {
 }
 
 // write_ascii
-void WriteAscii(PixelWriter &writer, int x, int y, char c,
+void WriteAscii(PixelWriter &writer, Vector2D<int> pos, char c,
                 const PixelColor &color) {
   const uint8_t *font = GetFont(c);
   if (font == nullptr) {
@@ -22,7 +23,7 @@ void WriteAscii(PixelWriter &writer, int x, int y, char c,
   for (int dy = 0; dy < 16; ++dy) {
     for (int dx = 0; dx < 8; ++dx) {
       if ((font[dy] << dx) & 0x80u) {
-        writer.Write(x + dx, y + dy, color);
+        writer.Write(pos + Vector2D<int>{dx, dy}, color);
       }
     }
   }
@@ -30,10 +31,10 @@ void WriteAscii(PixelWriter &writer, int x, int y, char c,
 // write_ascii
 
 // write_string
-void WriteString(PixelWriter &writer, int x, int y, const char *s,
+void WriteString(PixelWriter &writer, Vector2D<int> pos, const char *s,
                  const PixelColor &color) {
   for (int i = 0; s[i] != '\0'; ++i) {
-    WriteAscii(writer, x + 8 * i, y, s[i], color);
+    WriteAscii(writer, pos + Vector2D<int>{8 * i, 0}, s[i], color);
   }
 }
 // write_string

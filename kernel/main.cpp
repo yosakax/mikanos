@@ -9,6 +9,7 @@
 #include "console.hpp"
 #include "error.hpp"
 #include "font.hpp"
+#include "frame_buffer.hpp"
 #include "frame_buffer_config.hpp"
 #include "graphics.hpp"
 #include "interrupt.hpp"
@@ -302,26 +303,29 @@ KernelMainNewStack(const FrameBufferConfig &frame_buffer_config_ref,
   const int kFrameWidth = frame_buffer_config.horizontal_resolution;
   const int kFrameHeight = frame_buffer_config.vertical_resolution;
 
-  printk("create bg window!\n");
-  auto bgwindow = std::make_shared<Window>(kFrameWidth, kFrameHeight);
-  printk("create bg writer!\n");
+  auto bgwindow = std::make_shared<Window>(kFrameWidth, kFrameHeight,
+                                           frame_buffer_config.pixel_format);
+
   auto bgwriter = bgwindow->Writer();
 
-  printk("draw desktop!\n");
   DrawDesktop(*bgwriter);
   console->SetWriter(bgwriter);
 
-  printk("create mouse window\n");
-  auto mouse_window =
-      std::make_shared<Window>(kMouseCursorWidth, kMouseCursorHeight);
-  printk("mouse window transparent color\n");
+  auto mouse_window = std::make_shared<Window>(
+      kMouseCursorWidth, kMouseCursorHeight, frame_buffer_config.pixel_format);
   mouse_window->SetTransparentColor(kMouseTransparentColor);
-  printk("draw mouse!\n");
   DrawMouseCursor(mouse_window->Writer(), {0, 0});
-  printk("kokomade kita!2\n");
+
+  // create_screen
+  FrameBuffer screen;
+  if (auto err = screen.Initialize(frame_buffer_config)) {
+    Log(kError, "failed to initialize frame buffer: %s at %s:%d\n", err.Name(),
+        err.File(), err.Line());
+  }
+  // create_screen
 
   layer_manager = new LayerManager;
-  layer_manager->SetWriter(pixel_writer);
+  layer_manager->SetWriter(&screen);
 
   auto bglayer_id =
       layer_manager->NewLayer().SetWindow(bgwindow).Move({0, 0}).ID();

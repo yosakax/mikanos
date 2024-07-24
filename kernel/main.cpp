@@ -144,8 +144,6 @@ KernelMainNewStack(const FrameBufferConfig &frame_buffer_config_ref,
     break;
   }
 
-  DrawDesktop(*pixel_writer);
-
   console = new (console_buf) Console{kDesktopFGColor, kDesktopBGColor};
   console->SetWriter(pixel_writer);
 
@@ -314,6 +312,7 @@ KernelMainNewStack(const FrameBufferConfig &frame_buffer_config_ref,
   auto bgwriter = bgwindow->Writer();
 
   DrawDesktop(*bgwriter);
+  console->SetWindow(bgwindow);
   console->SetWriter(bgwriter);
 
   auto mouse_window = std::make_shared<Window>(

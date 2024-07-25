@@ -3,8 +3,8 @@
 #include "error.hpp"
 #include <cstdint>
 
-namespace {
-using namespace pci;
+namespace pci {
+// using namespace pci;
 
 // make_address
 uint32_t MakeAddress(uint8_t bus, uint8_t device, uint8_t function,
@@ -177,7 +177,7 @@ Error ConfigureMSIXRegister(const Device &dev, uint8_t cap_addr,
   return MAKE_ERROR(Error::kNotImplemented);
 }
 
-} // namespace
+} // namespace pci
 
 namespace pci {
 

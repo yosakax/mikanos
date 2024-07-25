@@ -82,4 +82,7 @@ private:
   std::optional<PixelColor> transparent_color_{std::nullopt};
   FrameBuffer shadow_buffer_{};
 };
+
+void DrawWindow(PixelWriter &writer, const char *title);
+
 // #@@range_end(window)

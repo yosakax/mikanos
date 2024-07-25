@@ -332,10 +332,8 @@ KernelMainNewStack(const FrameBufferConfig &frame_buffer_config_ref,
 
   // make_window
   auto main_window =
-      std::make_shared<Window>(160, 68, frame_buffer_config.pixel_format);
+      std::make_shared<Window>(160, 52, frame_buffer_config.pixel_format);
   DrawWindow(*main_window->Writer(), "Hellow_window");
-  WriteString(*main_window->Writer(), {24, 28}, "Welcome to", {0, 0, 0});
-  WriteString(*main_window->Writer(), {24, 44}, "MikanOS World!", {0, 0, 0});
   // make_window
 
   // create_screen
@@ -366,7 +364,19 @@ KernelMainNewStack(const FrameBufferConfig &frame_buffer_config_ref,
   // main_window
   printk("kokomade kita!\n");
 
+  char str[128];
+  unsigned int count = 0;
+
   while (true) {
+
+    ++count;
+    count %= 100000;
+    sprintf(str, "%010u", count);
+    FillRectangle(*main_window->Writer(), {24, 28}, {8 * 10, 16},
+                  {0xc6, 0xc6, 0xc6});
+    WriteString(*main_window->Writer(), {24, 28}, str, {0, 0, 0});
+    layer_manager->Draw();
+
     __asm__("cli");
 
     if (main_queue.Count() == 0) {
